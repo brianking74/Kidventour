@@ -1,0 +1,7 @@
+{
+  "name": "Kidventour",
+  "description": "Instantly find kid-friendly activities and auto-generate itineraries for any location. Ultra-simple for parents, magical for kids.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
