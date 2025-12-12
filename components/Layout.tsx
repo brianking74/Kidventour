@@ -69,8 +69,10 @@ const Layout: React.FC<LayoutProps> = ({
       )}
 
       {/* Bottom Nav */}
-      <nav className={`pb-safe pt-2 px-6 flex justify-between items-center z-20 shrink-0 ${
-        isKid ? 'bg-white/80 backdrop-blur-lg border-t-4 border-purple-200 h-24 rounded-t-3xl' : 'bg-white border-t border-slate-200 h-16'
+      <nav className={`px-6 flex justify-between items-center z-20 shrink-0 ${
+        isKid 
+          ? 'bg-white/80 backdrop-blur-lg border-t-4 border-purple-200 rounded-t-3xl pt-4 pb-10' 
+          : 'bg-white border-t border-slate-200 pt-3 pb-8'
       }`}>
         <NavIcon 
           icon={<Compass size={isKid ? 32 : 24} />} 

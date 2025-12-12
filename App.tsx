@@ -7,7 +7,7 @@ import ProfileView from './components/ProfileView';
 import SubscriptionModal from './components/SubscriptionModal';
 import { Activity, AppMode, UserPreferences, ItineraryDay } from './types';
 import { fetchSuggestedActivities, generateHolidayItinerary } from './services/geminiService';
-import { MapPin, Lock } from 'lucide-react';
+import { MapPin, Lock, RefreshCw } from 'lucide-react';
 
 const DEFAULT_PREFS: UserPreferences = {
   age: 6,
@@ -31,30 +31,41 @@ export default function App() {
   const [itinerary, setItinerary] = useState<ItineraryDay[]>([]);
   const [savedActivities, setSavedActivities] = useState<Activity[]>([]);
   
-  const [isLoading, setIsLoading] = useState(false);
+  // Start loading true so we don't show "No activities" while locating
+  const [isLoading, setIsLoading] = useState(true);
   const [loadingItinerary, setLoadingItinerary] = useState(false);
 
   // Initialize Geo
   useEffect(() => {
     if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition((pos) => {
-        setPrefs(prev => ({
-          ...prev,
-          location: {
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude,
-            name: "Current Location"
-          }
-        }));
-      }, (err) => {
-        console.warn("Geo denied, defaulting", err);
-        setPrefs(prev => ({
-          ...prev,
-          location: { lat: 40.7128, lng: -74.0060, name: "New York" }
-        }));
-      });
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setPrefs(prev => ({
+            ...prev,
+            location: {
+              lat: pos.coords.latitude,
+              lng: pos.coords.longitude,
+              name: "Current Location"
+            }
+          }));
+        }, 
+        (err) => {
+          console.warn("Geo denied or failed", err);
+          useDefaultLocation();
+        },
+        { timeout: 5000 } // Timeout after 5s and use default
+      );
+    } else {
+      useDefaultLocation();
     }
   }, []);
+
+  const useDefaultLocation = () => {
+    setPrefs(prev => ({
+      ...prev,
+      location: { lat: 40.7128, lng: -74.0060, name: "New York" }
+    }));
+  };
 
   // Fetch initial activities when location is set
   useEffect(() => {
@@ -125,7 +136,6 @@ export default function App() {
   const handleSubscriptionSuccess = () => {
     setShowSubscriptionModal(false);
     setIsPro(true);
-    // Optional: could trigger a confetti effect here or simple alert
     alert("🎉 Welcome to Pro! You can now generate full itineraries.");
   };
 
@@ -160,8 +170,11 @@ export default function App() {
 
           {/* Cards Stack */}
           <div className="flex-1 flex items-center justify-center relative">
-            {isLoading && activities.length === 0 ? (
-              <div className="animate-pulse text-slate-400 font-bold">Finding fun spots...</div>
+            {isLoading ? (
+              <div className="flex flex-col items-center gap-4">
+                <div className={`w-12 h-12 border-4 border-t-transparent rounded-full animate-spin ${mode === AppMode.KID ? 'border-purple-500' : 'border-mint-500'}`} />
+                <div className="text-slate-400 font-bold animate-pulse">Finding fun spots...</div>
+              </div>
             ) : visibleActivities.length > 0 ? (
               <ActivityCard 
                 activity={visibleActivities[0]} 
@@ -187,8 +200,15 @@ export default function App() {
             ) : (
               // Empty State
               <div className="text-center p-8">
-                <p>No more activities! Change filters to see more.</p>
-                <button onClick={() => setShowFilters(true)} className="text-mint-500 font-bold mt-4">Edit Filters</button>
+                <p className="mb-4 text-slate-600">No activities found. Try changing your filters or checking your connection.</p>
+                <div className="flex flex-col gap-3">
+                  <button onClick={() => setShowFilters(true)} className="text-mint-500 font-bold bg-mint-50 px-4 py-2 rounded-xl">
+                    Edit Filters
+                  </button>
+                  <button onClick={loadActivities} className="flex items-center justify-center gap-2 text-slate-500 font-bold bg-slate-100 px-4 py-2 rounded-xl">
+                    <RefreshCw size={16} /> Retry
+                  </button>
+                </div>
               </div>
             )}
             
