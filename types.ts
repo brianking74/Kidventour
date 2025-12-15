@@ -11,6 +11,7 @@ export interface Activity {
   isIndoor: boolean;
   lat: number;
   lng: number;
+  rarity?: 'common' | 'rare' | 'legendary'; // For stickers
 }
 
 export interface ItineraryItem {
@@ -44,6 +45,9 @@ export interface UserPreferences {
     lng: number;
     name: string;
   } | null;
+  streakDays: number;
+  lastVisitDate: string;
+  stickers: string[]; // Array of Activity IDs collected
 }
 
 export const INTERESTS = [

@@ -5,6 +5,7 @@ import Filters from './components/Filters';
 import ItineraryView from './components/ItineraryView';
 import ProfileView from './components/ProfileView';
 import SubscriptionModal from './components/SubscriptionModal';
+import AddToItineraryModal from './components/AddToItineraryModal';
 import { Activity, AppMode, UserPreferences, ItineraryDay } from './types';
 import { fetchSuggestedActivities, generateHolidayItinerary } from './services/geminiService';
 import { MapPin, Lock, RefreshCw, AlertTriangle } from 'lucide-react';
@@ -14,7 +15,10 @@ const DEFAULT_PREFS: UserPreferences = {
   interests: ['Vehicles', 'Animals'],
   isIndoor: false,
   maxPrice: 1,
-  location: null
+  location: null,
+  streakDays: 0,
+  lastVisitDate: '',
+  stickers: []
 };
 
 export default function App() {
@@ -31,6 +35,10 @@ export default function App() {
   const [itinerary, setItinerary] = useState<ItineraryDay[]>([]);
   const [savedActivities, setSavedActivities] = useState<Activity[]>([]);
   
+  // Add to Itinerary State
+  const [showAddToItineraryModal, setShowAddToItineraryModal] = useState(false);
+  const [activityToAdd, setActivityToAdd] = useState<Activity | null>(null);
+  
   // Start loading true so we don't show "No activities" while locating
   const [isLoading, setIsLoading] = useState(true);
   const [loadingItinerary, setLoadingItinerary] = useState(false);
@@ -38,13 +46,40 @@ export default function App() {
   // Error state for API issues
   const [error, setError] = useState<string | null>(null);
 
-  // Initialize Geo
+  // Initialize Geo & Streak
   useEffect(() => {
+    // 1. Load Streak from LocalStorage (Simulated persistence)
+    const storedStreak = localStorage.getItem('kidventour_streak');
+    const storedDate = localStorage.getItem('kidventour_last_visit');
+    const today = new Date().toDateString();
+    
+    let currentStreak = storedStreak ? parseInt(storedStreak) : 0;
+    
+    if (storedDate !== today) {
+        // New day visit
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        
+        if (storedDate === yesterday.toDateString()) {
+            currentStreak += 1; // Continued streak
+        } else if (storedDate) {
+            currentStreak = 1; // Broken streak, reset to 1
+        } else {
+            currentStreak = 1; // First visit
+        }
+        
+        localStorage.setItem('kidventour_streak', currentStreak.toString());
+        localStorage.setItem('kidventour_last_visit', today);
+    }
+
+    // 2. Geo
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           setPrefs(prev => ({
             ...prev,
+            streakDays: currentStreak,
+            lastVisitDate: today,
             location: {
               lat: pos.coords.latitude,
               lng: pos.coords.longitude,
@@ -54,18 +89,20 @@ export default function App() {
         }, 
         (err) => {
           console.warn("Geo denied or failed", err);
-          useDefaultLocation();
+          useDefaultLocation(currentStreak, today);
         },
-        { timeout: 5000 } // Timeout after 5s and use default
+        { timeout: 5000 }
       );
     } else {
-      useDefaultLocation();
+      useDefaultLocation(currentStreak, today);
     }
   }, []);
 
-  const useDefaultLocation = () => {
+  const useDefaultLocation = (streak: number, today: string) => {
     setPrefs(prev => ({
       ...prev,
+      streakDays: streak,
+      lastVisitDate: today,
       location: { lat: 40.7128, lng: -74.0060, name: "New York" }
     }));
   };
@@ -83,7 +120,12 @@ export default function App() {
     setError(null);
     try {
       const results = await fetchSuggestedActivities(prefs);
-      setActivities(results);
+      // Inject random rarity for sticker logic
+      const withRarity = results.map(r => ({
+          ...r,
+          rarity: Math.random() > 0.9 ? 'legendary' : Math.random() > 0.7 ? 'rare' : 'common' 
+      } as any));
+      setActivities(withRarity);
     } catch (e: any) {
       console.error(e);
       setError(e.message || "Failed to load activities. Please check your connection or API key.");
@@ -118,9 +160,12 @@ export default function App() {
     if (direction === 'left') {
       // Save
       setSavedActivities(prev => [...prev, current]);
-      if (window.navigator && window.navigator.vibrate) {
-        window.navigator.vibrate(50);
-      }
+      
+      // Update Sticker count in prefs for globe view
+      setPrefs(p => ({
+          ...p,
+          stickers: [...p.stickers, current.id]
+      }));
     }
     
     // Remove from stack
@@ -130,6 +175,41 @@ export default function App() {
     if (activities.length < 3 && isPro) {
       loadActivities();
     }
+  };
+
+  const handleAddToItineraryRequest = () => {
+    if (visibleActivities.length === 0) return;
+    const currentActivity = visibleActivities[0];
+
+    if (itinerary.length === 0) {
+      if (window.confirm("You need an active Magic Passport to add items. Would you like to generate one now?")) {
+        setActiveTab('plan');
+      }
+      return;
+    }
+    
+    setActivityToAdd(currentActivity);
+    setShowAddToItineraryModal(true);
+  };
+
+  const handleConfirmAddToItinerary = (dayIndex: number, slot: 'morning' | 'lunch' | 'afternoon' | 'evening') => {
+    if (!activityToAdd) return;
+    
+    const updatedItinerary = [...itinerary];
+    const day = updatedItinerary[dayIndex];
+    
+    // Update the slot with activity details
+    day[slot] = {
+      title: activityToAdd.name,
+      description: activityToAdd.description,
+      tags: [...activityToAdd.tags, 'Added Manually'],
+      location: `Lat: ${activityToAdd.lat.toFixed(4)}, Lng: ${activityToAdd.lng.toFixed(4)}`
+    };
+    
+    setItinerary(updatedItinerary);
+    setShowAddToItineraryModal(false);
+    setActivityToAdd(null);
+    alert(`Added "${activityToAdd.name}" to Day ${day.day} ${slot}!`);
   };
 
   const handleToggleMode = () => {
@@ -143,7 +223,7 @@ export default function App() {
   const handleSubscriptionSuccess = () => {
     setShowSubscriptionModal(false);
     setIsPro(true);
-    alert("🎉 Welcome to Pro! You can now generate full itineraries.");
+    alert("🎉 Welcome to Pro! You can now generate full passports.");
   };
 
   // Logic to limit free users
@@ -203,6 +283,7 @@ export default function App() {
                 mode={mode}
                 onSwipeLeft={() => handleSwipe('left')}
                 onSwipeRight={() => handleSwipe('right')}
+                onAddToItinerary={handleAddToItineraryRequest}
               />
             ) : isLimitReached ? (
               // Paywall Card
@@ -220,15 +301,19 @@ export default function App() {
                 </button>
               </div>
             ) : (
-              // Empty State
-              <div className="text-center p-8">
-                <p className="mb-4 text-slate-600">No activities found. Try changing your filters or checking your connection.</p>
-                <div className="flex flex-col gap-3">
-                  <button onClick={() => setShowFilters(true)} className="text-mint-500 font-bold bg-mint-50 px-4 py-2 rounded-xl">
-                    Edit Filters
+              // Empty State (Polished)
+              <div className="text-center p-8 flex flex-col items-center">
+                <div className="w-32 h-32 mb-4 bg-slate-100 rounded-full flex items-center justify-center">
+                     <span className="text-6xl animate-bounce">🐶</span>
+                </div>
+                <h3 className="font-bold text-slate-700 text-lg">Nothing here yet!</h3>
+                <p className="mb-6 text-slate-500 max-w-xs">We looked everywhere but couldn't find a match. Try broadening your filters?</p>
+                <div className="flex flex-col gap-3 w-full max-w-xs">
+                  <button onClick={() => setShowFilters(true)} className="text-mint-500 font-bold bg-mint-50 px-4 py-3 rounded-xl hover:bg-mint-100 transition-colors">
+                    Adjust Filters
                   </button>
-                  <button onClick={loadActivities} className="flex items-center justify-center gap-2 text-slate-500 font-bold bg-slate-100 px-4 py-2 rounded-xl">
-                    <RefreshCw size={16} /> Retry
+                  <button onClick={loadActivities} className="flex items-center justify-center gap-2 text-slate-500 font-bold bg-slate-100 px-4 py-3 rounded-xl hover:bg-slate-200 transition-colors">
+                    <RefreshCw size={16} /> Try Again
                   </button>
                 </div>
               </div>
@@ -258,19 +343,24 @@ export default function App() {
 
     if (activeTab === 'saved') {
       return (
-        <div className="p-4 space-y-4">
+        <div className="p-4 space-y-4 h-full overflow-y-auto pb-20">
           <h2 className="text-2xl font-bold text-slate-800 mb-4">Saved Adventures</h2>
           {savedActivities.length === 0 ? (
-            <div className="text-center text-slate-400 mt-20">
-              No saved activities yet. Go Explore!
+            <div className="text-center text-slate-400 mt-20 flex flex-col items-center">
+              <span className="text-5xl mb-4 grayscale opacity-50">🧭</span>
+              <p>No saved activities yet.</p>
+              <button onClick={() => setActiveTab('explore')} className="mt-4 text-mint-500 font-bold">Go Explore!</button>
             </div>
           ) : (
             savedActivities.map(act => (
-              <div key={act.id} className="flex gap-4 bg-white p-3 rounded-xl shadow-sm">
+              <div key={act.id} className="flex gap-4 bg-white p-3 rounded-xl shadow-sm border border-slate-100">
                 <img src={act.imageUrl} alt={act.name} className="w-20 h-20 rounded-lg object-cover" />
-                <div>
+                <div className="flex-1">
                   <h3 className="font-bold text-slate-800">{act.name}</h3>
-                  <p className="text-xs text-slate-500 line-clamp-2">{act.headline}</p>
+                  <p className="text-xs text-slate-500 line-clamp-2 mb-2">{act.headline}</p>
+                  <div className="flex gap-1">
+                      {act.tags.slice(0, 2).map(t => <span key={t} className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-500">{t}</span>)}
+                  </div>
                 </div>
               </div>
             ))
@@ -287,7 +377,7 @@ export default function App() {
             <div className="px-6 pb-6">
               <button 
                 onClick={handleUpgradeClick}
-                className="w-full bg-gradient-to-r from-amber-200 to-yellow-400 text-yellow-900 font-bold py-4 rounded-xl shadow-md"
+                className="w-full bg-gradient-to-r from-amber-200 to-yellow-400 text-yellow-900 font-bold py-4 rounded-xl shadow-md transform hover:scale-[1.02] transition-transform"
               >
                 Upgrade to Kidventour Pro 🚀
               </button>
@@ -308,8 +398,15 @@ export default function App() {
       onToggleMode={handleToggleMode}
       showBoredButton={activeTab === 'explore'}
       onBoredClick={() => {
-         alert("I'm Bored clicked! Imagine a random fun activity popping up here.");
+         // Mock Smart Notification Logic
+         const msgs = [
+             "☔ Rain predicted at 4PM! Swapping park for indoor play.",
+             "🔥 Your streak is on fire! Find one more to level up.",
+             "🍦 A new ice cream spot opened nearby!"
+         ];
+         alert(msgs[Math.floor(Math.random() * msgs.length)]);
       }}
+      streakDays={prefs.streakDays}
     >
       {renderContent()}
 
@@ -329,6 +426,13 @@ export default function App() {
         isOpen={showSubscriptionModal}
         onClose={() => setShowSubscriptionModal(false)}
         onSuccess={handleSubscriptionSuccess}
+      />
+      
+      <AddToItineraryModal 
+        isOpen={showAddToItineraryModal}
+        onClose={() => setShowAddToItineraryModal(false)}
+        itinerary={itinerary}
+        onConfirm={handleConfirmAddToItinerary}
       />
     </Layout>
   );
