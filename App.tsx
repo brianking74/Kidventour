@@ -7,7 +7,7 @@ import ProfileView from './components/ProfileView';
 import SubscriptionModal from './components/SubscriptionModal';
 import { Activity, AppMode, UserPreferences, ItineraryDay } from './types';
 import { fetchSuggestedActivities, generateHolidayItinerary } from './services/geminiService';
-import { MapPin, Lock, RefreshCw } from 'lucide-react';
+import { MapPin, Lock, RefreshCw, AlertTriangle } from 'lucide-react';
 
 const DEFAULT_PREFS: UserPreferences = {
   age: 6,
@@ -34,6 +34,9 @@ export default function App() {
   // Start loading true so we don't show "No activities" while locating
   const [isLoading, setIsLoading] = useState(true);
   const [loadingItinerary, setLoadingItinerary] = useState(false);
+  
+  // Error state for API issues
+  const [error, setError] = useState<string | null>(null);
 
   // Initialize Geo
   useEffect(() => {
@@ -69,7 +72,7 @@ export default function App() {
 
   // Fetch initial activities when location is set
   useEffect(() => {
-    if (prefs.location && activities.length === 0) {
+    if (prefs.location && activities.length === 0 && !error) {
       loadActivities();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -77,11 +80,13 @@ export default function App() {
 
   const loadActivities = async () => {
     setIsLoading(true);
+    setError(null);
     try {
       const results = await fetchSuggestedActivities(prefs);
       setActivities(results);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      setError(e.message || "Failed to load activities. Please check your connection or API key.");
     } finally {
       setIsLoading(false);
     }
@@ -93,12 +98,14 @@ export default function App() {
       return;
     }
     setLoadingItinerary(true);
+    setError(null);
     try {
       // Pro gets 14 days
       const plan = await generateHolidayItinerary(prefs, 14);
       setItinerary(plan);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      alert(e.message || "Failed to generate itinerary.");
     } finally {
       setLoadingItinerary(false);
     }
@@ -174,6 +181,21 @@ export default function App() {
               <div className="flex flex-col items-center gap-4">
                 <div className={`w-12 h-12 border-4 border-t-transparent rounded-full animate-spin ${mode === AppMode.KID ? 'border-purple-500' : 'border-mint-500'}`} />
                 <div className="text-slate-400 font-bold animate-pulse">Finding fun spots...</div>
+              </div>
+            ) : error ? (
+              // Error State
+              <div className="w-full max-w-sm p-6 bg-red-50 border border-red-200 rounded-3xl text-center">
+                <div className="w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <AlertTriangle size={32} />
+                </div>
+                <h3 className="text-lg font-bold text-red-800 mb-2">Oops! Something went wrong</h3>
+                <p className="text-sm text-red-600 mb-6">{error}</p>
+                <button 
+                  onClick={loadActivities}
+                  className="bg-red-500 text-white font-bold py-3 px-6 rounded-xl shadow-lg hover:bg-red-600 transition-colors flex items-center justify-center gap-2 w-full"
+                >
+                  <RefreshCw size={18} /> Try Again
+                </button>
               </div>
             ) : visibleActivities.length > 0 ? (
               <ActivityCard 
@@ -297,6 +319,7 @@ export default function App() {
           onChange={(p) => {
             setPrefs(p);
             setActivities([]); // clear so we fetch new
+            setError(null);
           }}
           onClose={() => setShowFilters(false)}
         />

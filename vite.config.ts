@@ -6,7 +6,9 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     define: {
-      'process.env.API_KEY': JSON.stringify(env.API_KEY || process.env.API_KEY),
+      // Fix: Ensure we always stringify a string, even if empty. 
+      // JSON.stringify(undefined) causes Vite to skip defining the variable, leading to "process is not defined" in browser.
+      'process.env.API_KEY': JSON.stringify(env.API_KEY || ''),
     },
     server: {
       port: 3000,

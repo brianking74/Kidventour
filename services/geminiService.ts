@@ -3,30 +3,31 @@ import { Activity, ItineraryDay, UserPreferences } from "../types";
 
 const createClient = () => {
   const apiKey = process.env.API_KEY;
-  if (!apiKey) {
-    console.error("API_KEY is missing");
-    throw new Error("API Key missing");
+  // Check for undefined, null, or empty string (which we set in vite.config.ts as fallback)
+  if (!apiKey || apiKey === "") {
+    console.error("API_KEY is missing from environment variables");
+    throw new Error("Missing API Key. Please configure the API_KEY environment variable in Netlify.");
   }
   return new GoogleGenAI({ apiKey });
 };
 
 export const fetchSuggestedActivities = async (prefs: UserPreferences): Promise<Activity[]> => {
-  const ai = createClient();
-  const locationName = prefs.location?.name || "current location";
-
-  const prompt = `
-    Suggest 15 specific, real or realistic kid-friendly activities near ${locationName} (Lat: ${prefs.location?.lat}, Lng: ${prefs.location?.lng}).
-    Focus on children aged ${prefs.age}.
-    Interests: ${prefs.interests.join(', ')}.
-    ${prefs.isIndoor ? "Prefer indoor activities." : "Prefer outdoor activities."}
-    Price level should be roughly level ${prefs.maxPrice} (0=Free, 3=Exp).
-    
-    For each activity, provide a 'visualPrompt' that describes exactly what a photo of this activity would look like, so I can generate a picture. e.g. "Brightly colored indoor lego playground with children building towers" or "Sunny outdoor park with a large wooden climbing frame and green grass".
-    
-    Return a JSON array.
-  `;
-
   try {
+    const ai = createClient();
+    const locationName = prefs.location?.name || "current location";
+
+    const prompt = `
+      Suggest 15 specific, real or realistic kid-friendly activities near ${locationName} (Lat: ${prefs.location?.lat}, Lng: ${prefs.location?.lng}).
+      Focus on children aged ${prefs.age}.
+      Interests: ${prefs.interests.join(', ')}.
+      ${prefs.isIndoor ? "Prefer indoor activities." : "Prefer outdoor activities."}
+      Price level should be roughly level ${prefs.maxPrice} (0=Free, 3=Exp).
+      
+      For each activity, provide a 'visualPrompt' that describes exactly what a photo of this activity would look like, so I can generate a picture. e.g. "Brightly colored indoor lego playground with children building towers" or "Sunny outdoor park with a large wooden climbing frame and green grass".
+      
+      Return a JSON array.
+    `;
+
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: prompt,
@@ -72,30 +73,31 @@ export const fetchSuggestedActivities = async (prefs: UserPreferences): Promise<
       });
     }
     return [];
-  } catch (error) {
+  } catch (error: any) {
     console.error("Gemini fetch error:", error);
-    return [];
+    // Rethrow so the UI can show the error state
+    throw error; 
   }
 };
 
 export const generateHolidayItinerary = async (prefs: UserPreferences, daysCount: number = 14): Promise<ItineraryDay[]> => {
-  const ai = createClient();
-  const locationName = prefs.location?.name || "the destination";
-
-  const prompt = `
-    Create a detailed ${daysCount}-day holiday itinerary for a family with a ${prefs.age} year old child in ${locationName}.
-    Interests: ${prefs.interests.join(', ')}.
-    
-    For each day, provide exactly 4 slots:
-    1. Morning (9-11am): Main activity.
-    2. Lunch (12-1pm): A kid-friendly food spot, specific restaurant or picnic spot.
-    3. Afternoon (2-4pm): Adventure or play activity.
-    4. Evening: A wind-down activity or bedtime story theme.
-
-    Return JSON array of days.
-  `;
-
   try {
+    const ai = createClient();
+    const locationName = prefs.location?.name || "the destination";
+
+    const prompt = `
+      Create a detailed ${daysCount}-day holiday itinerary for a family with a ${prefs.age} year old child in ${locationName}.
+      Interests: ${prefs.interests.join(', ')}.
+      
+      For each day, provide exactly 4 slots:
+      1. Morning (9-11am): Main activity.
+      2. Lunch (12-1pm): A kid-friendly food spot, specific restaurant or picnic spot.
+      3. Afternoon (2-4pm): Adventure or play activity.
+      4. Evening: A wind-down activity or bedtime story theme.
+
+      Return JSON array of days.
+    `;
+
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: prompt,
@@ -152,6 +154,6 @@ export const generateHolidayItinerary = async (prefs: UserPreferences, daysCount
     return [];
   } catch (error) {
     console.error("Gemini itinerary error:", error);
-    return [];
+    throw error;
   }
 };
